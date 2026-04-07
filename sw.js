@@ -1,4 +1,4 @@
-const CACHE = 'scanner-v1';
+const CACHE = 'scanner-v2';
 const ASSETS = [
   './',
   './index.html',
@@ -30,8 +30,8 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
-  // Never intercept Anthropic API calls — always go to network
-  if (e.request.url.includes('api.anthropic.com')) return;
+  // Never intercept Gemini API calls — always go to network
+  if (e.request.url.includes('generativelanguage.googleapis.com')) return;
 
   e.respondWith(
     caches.match(e.request).then(cached => {
