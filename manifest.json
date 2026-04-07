@@ -1,6 +1,6 @@
 {
   "name": "Receipt & Ticket Scanner",
-  "short_name": "Scanner",
+  "short_name": "Ticket Scanner",
   "description": "Scan receipts and transport tickets with Gemini AI vision",
   "start_url": "./index.html",
   "scope": "./",
