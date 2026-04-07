@@ -1,4 +1,4 @@
-/* ── Claude Vision API ─────────────────────────────────────────────────────── */
+/* ── Google Gemini Vision API ────────────────────────────────────────────────── */
 
 /**
  * Resize an image to a max dimension while preserving aspect ratio.
@@ -23,38 +23,33 @@ function resizeForAPI(dataUrl, maxPx = 1920, quality = 0.85) {
 }
 
 /**
- * Send an image to Claude and extract structured receipt / ticket fields.
+ * Send an image to Gemini 1.5 Flash and extract structured receipt / ticket fields.
  * @param {string} dataUrl   Full-resolution image data-URL
- * @param {string} apiKey    Anthropic API key
+ * @param {string} apiKey    Google Gemini API key
  * @returns {Promise<{type, vendor, date, amount, notes}>}
  */
 async function analyzeImage(dataUrl, apiKey) {
   const resized = await resizeForAPI(dataUrl);
   const base64  = resized.split(',')[1];
 
-  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+  const endpoint =
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
+
+  const resp = await fetch(endpoint, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      // Required header for direct browser-to-API calls
-      'anthropic-dangerous-direct-browser-access': 'true'
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 512,
-      messages: [{
-        role: 'user',
-        content: [
+      contents: [{
+        parts: [
           {
-            type: 'image',
-            source: { type: 'base64', media_type: 'image/jpeg', data: base64 }
+            inline_data: {
+              mime_type: 'image/jpeg',
+              data: base64
+            }
           },
           {
-            type: 'text',
             text: `Analyze this image of a receipt, transport ticket, or document.
-Respond with ONLY a valid JSON object — no markdown, no explanation, just the JSON:
+Respond with ONLY a valid JSON object — no markdown fences, no explanation, just the raw JSON:
 {
   "type": "receipt" or "ticket" or "other",
   "vendor": "business, store, or transport operator name — empty string if unknown",
@@ -64,26 +59,33 @@ Respond with ONLY a valid JSON object — no markdown, no explanation, just the 
 }`
           }
         ]
-      }]
+      }],
+      generationConfig: {
+        temperature: 0.1,
+        maxOutputTokens: 512
+      }
     })
   });
 
   if (!resp.ok) {
-    let msg = `API error ${resp.status}`;
-    try { const e = await resp.json(); msg = e.error?.message || msg; } catch (_) {}
+    let msg = `Gemini API error ${resp.status}`;
+    try {
+      const e = await resp.json();
+      msg = e.error?.message || msg;
+    } catch (_) {}
     throw new Error(msg);
   }
 
   const data = await resp.json();
-  const text = data.content?.[0]?.text || '';
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
 
   // Extract JSON even if the model wrapped it in markdown fences
   const match = text.match(/\{[\s\S]*\}/);
-  if (!match) throw new Error('Could not parse AI response');
+  if (!match) throw new Error('Could not parse Gemini response');
 
   try {
     return JSON.parse(match[0]);
   } catch (_) {
-    throw new Error('Invalid JSON from AI');
+    throw new Error('Invalid JSON from Gemini');
   }
 }
