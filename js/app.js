@@ -32,13 +32,6 @@ function showToast(message, type = 'info', duration = 3000) {
   toastTimer = setTimeout(() => toast.classList.remove('show'), duration);
 }
 
-// ── Service Worker ────────────────────────────────────────────────────────────
-function registerServiceWorker() {
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js')
-      .catch(err => console.warn('SW registration failed:', err));
-  }
-}
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 const SCREEN_TITLES = {
@@ -428,7 +421,6 @@ function updateKeyStatus() {
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-  registerServiceWorker();
   setupNav();
   setupCamera();
   setupReview();

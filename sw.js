@@ -1,4 +1,4 @@
-const CACHE = 'scanner-v3';
+const CACHE = 'scanner-v4';
 const ASSETS = [
   './',
   './index.html',
@@ -7,8 +7,8 @@ const ASSETS = [
   './js/api.js',
   './js/app.js',
   './manifest.json',
-  './icons/icon-192.svg',
-  './icons/icon-512.svg'
+  './icons/icon-192.png',
+  './icons/icon-512.png'
 ];
 
 self.addEventListener('install', e => {

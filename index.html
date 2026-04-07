@@ -14,8 +14,13 @@
   <title>Receipt & Ticket Scanner</title>
 
   <link rel="manifest" href="manifest.json">
-  <link rel="apple-touch-icon" href="icons/icon-192.svg">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
   <link rel="stylesheet" href="css/style.css">
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js');
+    }
+  </script>
 </head>
 <body>
 

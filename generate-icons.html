@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Generate PWA Icons</title>
+  <style>
+    body { font-family: sans-serif; background: #0d0d1a; color: #e8e8ff; display: flex;
+           flex-direction: column; align-items: center; justify-content: center;
+           min-height: 100vh; gap: 24px; margin: 0; }
+    h1   { font-size: 1.2rem; margin: 0; color: #a47dff; }
+    p    { font-size: 0.85rem; color: #6868a0; margin: 0; }
+    .row { display: flex; gap: 32px; align-items: flex-end; }
+    .col { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+    canvas { border-radius: 18px; box-shadow: 0 8px 32px rgba(124,77,255,0.4); }
+    button { padding: 10px 24px; background: #7c4dff; color: #fff; border: none;
+             border-radius: 10px; font-size: 0.9rem; font-weight: 600; cursor: pointer; }
+    button:hover { background: #6039ca; }
+    .note { font-size: 0.78rem; color: #6868a0; max-width: 420px; text-align: center; line-height: 1.6; }
+  </style>
+</head>
+<body>
+  <h1>PWA Icon Generator</h1>
+  <p>Click each button to download the PNG, then place both files in the <code>icons/</code> folder.</p>
+
+  <div class="row">
+    <div class="col">
+      <canvas id="c192" width="192" height="192"></canvas>
+      <button onclick="dl('c192','icon-192.png')">Download icon-192.png</button>
+    </div>
+    <div class="col">
+      <canvas id="c512" width="512" height="512"></canvas>
+      <button onclick="dl('c512','icon-512.png')">Download icon-512.png</button>
+    </div>
+  </div>
+
+  <p class="note">
+    After downloading, put both PNGs in <code>ticket-scanner/icons/</code>, commit, and push.
+    Chrome will detect the updated manifest and show the "Add to Home screen" prompt.
+  </p>
+
+<script>
+function drawIcon(canvas) {
+  const s   = canvas.width;
+  const ctx = canvas.getContext('2d');
+  const r   = s * 0.208; // corner radius (≈40px on 192)
+
+  // ── Background ──────────────────────────────────────────────────────────────
+  ctx.fillStyle = '#0d0d1a';
+  roundRect(ctx, 0, 0, s, s, r);
+  ctx.fill();
+
+  // Subtle purple glow circle
+  const glow = ctx.createRadialGradient(s/2, s/2, 0, s/2, s/2, s * 0.42);
+  glow.addColorStop(0,   'rgba(124,77,255,0.22)');
+  glow.addColorStop(1,   'rgba(124,77,255,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, s, s);
+
+  // ── Receipt body ─────────────────────────────────────────────────────────────
+  const rx = s * 0.281, ry = s * 0.177, rw = s * 0.438, rh = s * 0.573;
+  const rcr = s * 0.042;
+  ctx.fillStyle   = '#1a1a2e';
+  ctx.strokeStyle = '#7c4dff';
+  ctx.lineWidth   = s * 0.013;
+  roundRect(ctx, rx, ry, rw, rh, rcr);
+  ctx.fill();
+  ctx.stroke();
+
+  // Receipt lines
+  const lx = rx + rw * 0.17;
+  const lw  = rw * 0.65;
+
+  // Heading line (purple)
+  line(ctx, lx, ry + rh * 0.18, lw, rh * 0.065, rcr / 2, '#7c4dff', 1);
+  // Body lines (accent, decreasing opacity)
+  line(ctx, lx, ry + rh * 0.33, lw * 0.70, rh * 0.052, rcr / 2, '#4fc3f7', 0.80);
+  line(ctx, lx, ry + rh * 0.46, lw * 0.84, rh * 0.052, rcr / 2, '#4fc3f7', 0.60);
+  line(ctx, lx, ry + rh * 0.58, lw * 0.55, rh * 0.052, rcr / 2, '#4fc3f7', 0.45);
+  // Separator
+  ctx.globalAlpha = 0.35;
+  ctx.fillStyle   = '#7c4dff';
+  ctx.fillRect(rx + rw * 0.10, ry + rh * 0.72, rw * 0.80, s * 0.008);
+  ctx.globalAlpha = 1;
+  // Total line (purple)
+  line(ctx, lx, ry + rh * 0.80, lw, rh * 0.075, rcr / 2, '#7c4dff', 1);
+
+  // ── Scan corners ─────────────────────────────────────────────────────────────
+  const pad = s * 0.094;
+  const arm = s * 0.104;
+  const lw2 = s * 0.031;
+  ctx.strokeStyle = '#7c4dff';
+  ctx.lineWidth   = lw2;
+  ctx.lineCap     = 'round';
+
+  corner(ctx, pad,     pad,     arm,  1,  1); // top-left
+  corner(ctx, s - pad, pad,     arm, -1,  1); // top-right
+  corner(ctx, pad,     s - pad, arm,  1, -1); // bottom-left
+  corner(ctx, s - pad, s - pad, arm, -1, -1); // bottom-right
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h);
+  ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+}
+
+function line(ctx, x, y, w, h, r, color, alpha) {
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle   = color;
+  roundRect(ctx, x, y, w, h, r);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+}
+
+function corner(ctx, x, y, arm, dx, dy) {
+  ctx.beginPath();
+  ctx.moveTo(x, y + arm * dy);
+  ctx.lineTo(x, y);
+  ctx.lineTo(x + arm * dx, y);
+  ctx.stroke();
+}
+
+function dl(id, filename) {
+  document.getElementById(id).toBlob(blob => {
+    const a = Object.assign(document.createElement('a'), {
+      href: URL.createObjectURL(blob), download: filename
+    });
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }, 'image/png');
+}
+
+// Draw both on load
+drawIcon(document.getElementById('c192'));
+drawIcon(document.getElementById('c512'));
+</script>
+</body>
+</html>
