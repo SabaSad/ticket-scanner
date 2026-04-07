@@ -33,7 +33,7 @@ async function analyzeImage(dataUrl, apiKey) {
   const base64  = resized.split(',')[1];
 
   const endpoint =
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.0-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
 
   const resp = await fetch(endpoint, {
     method: 'POST',
