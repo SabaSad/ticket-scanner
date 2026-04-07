@@ -54,7 +54,7 @@ Respond with ONLY a valid JSON object — no markdown fences, no explanation, ju
   "type": "receipt" or "ticket" or "other",
   "vendor": "business, store, or transport operator name — empty string if unknown",
   "date": "YYYY-MM-DD — empty string if not found",
-  "amount": "total with currency symbol, e.g. €12.50 or $45.00 — empty string if not found",
+  "amount": "total amount in format SYMBOL+digits+dot+2decimals, e.g. €12.50 or €1250.00 or $45.99 — always dot as decimal separator, always exactly 2 decimal places, no spaces — empty string if not found",
   "notes": "one or two sentences describing what this document is"
 }`
           }

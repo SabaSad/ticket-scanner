@@ -16,6 +16,10 @@
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
   <link rel="stylesheet" href="css/style.css">
+  <!-- SheetJS for Excel export -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <!-- Google Identity Services for Drive upload -->
+  <script src="https://accounts.google.com/gsi/client" async></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('./sw.js');
@@ -151,7 +155,7 @@
 
       <div class="history-toolbar">
         <span id="history-count" class="history-count">0 items</span>
-        <button id="export-btn" class="btn btn-sm btn-secondary">📥 Export CSV</button>
+        <button id="export-btn" class="btn btn-sm btn-secondary">📊 Export XLSX</button>
       </div>
 
       <div id="history-list" class="history-list">
@@ -186,6 +190,28 @@
           <div class="settings-row">
             <button id="save-key-btn"  class="btn btn-primary">Save Key</button>
             <button id="clear-key-btn" class="btn btn-secondary" style="display:none">Remove</button>
+          </div>
+        </div>
+
+        <!-- Google Drive -->
+        <div class="settings-card">
+          <h2>Google Drive Upload</h2>
+          <p class="settings-hint">
+            Upload scanned photos to your Google Drive.<br>
+            You need an OAuth 2.0 Client ID (Web application type) from
+            <strong>console.cloud.google.com</strong>. Enable the Drive API, then add your
+            GitHub Pages URL (e.g. <code>https://user.github.io</code>) as an
+            <em>Authorized JavaScript origin</em>.
+          </p>
+          <span id="drive-status" class="key-status key-missing">Drive not configured</span>
+          <div class="form-group">
+            <input type="text" id="drive-client-input" class="form-control"
+              placeholder="123456789-abc….apps.googleusercontent.com"
+              autocomplete="off" spellcheck="false">
+          </div>
+          <div class="settings-row">
+            <button id="save-drive-btn"  class="btn btn-primary">Save Client ID</button>
+            <button id="clear-drive-btn" class="btn btn-secondary" style="display:none">Remove</button>
           </div>
         </div>
 

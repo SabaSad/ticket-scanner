@@ -4,21 +4,100 @@
 let cameraStream      = null;
 let currentFacingMode = 'environment';
 let capturedDataUrl   = null;   // Full-resolution image (sent to API)
-let capturedThumb     = null;   // Resized thumbnail (stored in DB)
+let capturedThumb     = null;   // 400 px — displayed in history list
+let capturedImage     = null;   // 1200 px — uploaded to Google Drive
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
 
 function escHtml(s) {
   return String(s ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function capitalize(s) {
-  return s ? s[0].toUpperCase() + s.slice(1) : '';
+function capitalize(s) { return s ? s[0].toUpperCase() + s.slice(1) : ''; }
+
+// ── Currency normalisation ────────────────────────────────────────────────────
+const CURRENCY_CODES = [
+  ['EUR', '€'], ['USD', '$'], ['GBP', '£'], ['CHF', 'Fr'],
+  ['PLN', 'zł'], ['CZK', 'Kč'], ['HUF', 'Ft'], ['SEK', 'kr'],
+  ['NOK', 'kr'], ['DKK', 'kr']
+];
+const CURRENCY_SYMS = ['€', '$', '£', 'Fr'];
+
+/**
+ * Parse a money string like "1.234,56" or "1,234.56" to a float.
+ */
+function parseMoneyString(s) {
+  s = s.trim().replace(/\s/g, '');
+  const commas = (s.match(/,/g) || []).length;
+  const dots   = (s.match(/\./g) || []).length;
+
+  if (!commas && !dots) return parseFloat(s);
+
+  // "1.234,56" — comma is decimal (European)
+  if (commas === 1 && dots >= 1 && s.lastIndexOf(',') > s.lastIndexOf('.'))
+    return parseFloat(s.replace(/\./g, '').replace(',', '.'));
+
+  // "12,50" or "1,234" — single comma, no dot
+  if (commas === 1 && !dots) {
+    const decimals = (s.split(',')[1] || '').length;
+    return decimals <= 2
+      ? parseFloat(s.replace(',', '.'))   // decimal comma
+      : parseFloat(s.replace(',', ''));   // thousands comma
+  }
+
+  // "1,234.56" — dot is decimal (US)
+  if (dots === 1 && commas >= 1 && s.lastIndexOf('.') > s.lastIndexOf(','))
+    return parseFloat(s.replace(/,/g, ''));
+
+  // "12.50" or "1.234" — single dot, no comma
+  if (dots === 1 && !commas) {
+    const decimals = (s.split('.')[1] || '').length;
+    return decimals <= 2
+      ? parseFloat(s)                     // decimal dot
+      : parseFloat(s.replace('.', ''));   // thousands dot
+  }
+
+  return parseFloat(s.replace(/,/g, '')); // fallback
+}
+
+/**
+ * Normalise any amount string to €X.XX (or $X.XX, £X.XX, etc).
+ * Returns the original string unchanged if it cannot be parsed.
+ */
+function normalizeAmount(raw) {
+  if (!raw) return '';
+  let s = String(raw).trim();
+  if (!s) return '';
+
+  let symbol = null;
+
+  // 1. Try to find a 3-letter currency code first (unambiguous)
+  for (const [code, sym] of CURRENCY_CODES) {
+    if (new RegExp(`(^|[\\s\\d])${code}([\\s\\d]|$)`, 'i').test(s)) {
+      symbol = sym;
+      s = s.replace(new RegExp(code, 'gi'), '').trim();
+      break;
+    }
+  }
+
+  // 2. Try to find a symbol; strip any that remain regardless
+  for (const sym of CURRENCY_SYMS) {
+    if (s.includes(sym)) {
+      if (!symbol) symbol = sym;
+      s = s.replace(new RegExp('\\' + sym, 'g'), '').trim();
+    }
+  }
+
+  symbol = symbol ?? '€'; // default to Euro
+  s = s.replace(/\s/g, '');
+
+  const num = parseMoneyString(s);
+  if (isNaN(num)) return raw; // cannot parse — leave as-is
+
+  return `${symbol}${num.toFixed(2)}`;
 }
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
@@ -32,38 +111,33 @@ function showToast(message, type = 'info', duration = 3000) {
   toastTimer = setTimeout(() => toast.classList.remove('show'), duration);
 }
 
-
 // ── Navigation ────────────────────────────────────────────────────────────────
 const SCREEN_TITLES = {
-  camera:   'Scanner',
-  review:   'Review & Save',
-  history:  'History',
-  settings: 'Settings'
+  camera: 'Scanner', review: 'Review & Save',
+  history: 'History', settings: 'Settings'
 };
 
 function showScreen(name) {
-  // Stop camera when leaving the camera screen
   if (name !== 'camera') stopCamera();
 
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   const target = $(`screen-${name}`);
   if (target) target.classList.add('active');
 
-  document.querySelectorAll('.nav-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.screen === name);
-  });
+  document.querySelectorAll('.nav-btn').forEach(btn =>
+    btn.classList.toggle('active', btn.dataset.screen === name)
+  );
 
   $('screen-title').textContent = SCREEN_TITLES[name] ?? 'Scanner';
 
-  // Side-effects per screen
-  if (name === 'camera')  { startCamera(); }
-  if (name === 'history') { loadHistory(); }
+  if (name === 'camera')  startCamera();
+  if (name === 'history') loadHistory();
 }
 
 function setupNav() {
-  document.querySelectorAll('.nav-btn').forEach(btn => {
-    btn.addEventListener('click', () => showScreen(btn.dataset.screen));
-  });
+  document.querySelectorAll('.nav-btn').forEach(btn =>
+    btn.addEventListener('click', () => showScreen(btn.dataset.screen))
+  );
   $('settings-btn').addEventListener('click', () => showScreen('settings'));
 }
 
@@ -77,18 +151,11 @@ function setupCamera() {
 }
 
 async function startCamera() {
-  if (cameraStream) return; // already running
-
-  // Reset to capture mode first
+  if (cameraStream) return;
   showCaptureMode();
-
   try {
     cameraStream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: currentFacingMode,
-        width:  { ideal: 1920 },
-        height: { ideal: 1080 }
-      }
+      video: { facingMode: currentFacingMode, width: { ideal: 1920 }, height: { ideal: 1080 } }
     });
     const video = $('camera-video');
     video.srcObject = cameraStream;
@@ -96,12 +163,12 @@ async function startCamera() {
     video.style.display = 'block';
     $('scan-overlay').style.display = 'flex';
     $('capture-btn').style.display = 'flex';
-    $('flip-btn').style.display = 'flex';
+    $('flip-btn').style.display    = 'flex';
   } catch (_) {
-    $('camera-video').style.display = 'none';
-    $('scan-overlay').style.display = 'none';
-    $('capture-btn').style.display = 'none';
-    $('flip-btn').style.display = 'none';
+    $('camera-video').style.display   = 'none';
+    $('scan-overlay').style.display   = 'none';
+    $('capture-btn').style.display    = 'none';
+    $('flip-btn').style.display       = 'none';
     $('camera-unavailable').style.display = 'flex';
   }
 }
@@ -128,7 +195,6 @@ function capturePhoto() {
   canvas.height = video.videoHeight;
   canvas.getContext('2d').drawImage(video, 0, 0);
 
-  // Brief white flash
   const overlay = $('scan-overlay');
   overlay.classList.add('flash');
   setTimeout(() => overlay.classList.remove('flash'), 200);
@@ -141,34 +207,29 @@ function handleFileUpload(e) {
   const file = e.target.files[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = ({ target: { result } }) => {
-    capturedDataUrl = result;
-    showPreview(result);
-  };
+  reader.onload = ({ target: { result } }) => { capturedDataUrl = result; showPreview(result); };
   reader.readAsDataURL(file);
-  e.target.value = ''; // allow re-selecting the same file
+  e.target.value = '';
 }
 
 function showPreview(dataUrl) {
-  $('camera-video').style.display   = 'none';
-  $('scan-overlay').style.display   = 'none';
+  $('camera-video').style.display       = 'none';
+  $('scan-overlay').style.display       = 'none';
   $('camera-unavailable').style.display = 'none';
-
-  const pc = $('preview-container');
-  pc.style.display       = 'flex';
-  $('preview-img').src   = dataUrl;
-
-  $('capture-controls').style.display = 'none';
-  $('analyze-controls').style.display = 'flex';
+  $('preview-container').style.display  = 'flex';
+  $('preview-img').src                  = dataUrl;
+  $('capture-controls').style.display   = 'none';
+  $('analyze-controls').style.display   = 'flex';
 }
 
 function showCaptureMode() {
-  $('preview-container').style.display = 'none';
-  $('preview-img').src                 = '';
-  $('capture-controls').style.display  = 'flex';
-  $('analyze-controls').style.display  = 'none';
+  $('preview-container').style.display  = 'none';
+  $('preview-img').src                  = '';
+  $('capture-controls').style.display   = 'flex';
+  $('analyze-controls').style.display   = 'none';
   capturedDataUrl = null;
   capturedThumb   = null;
+  capturedImage   = null;
 }
 
 function retakePhoto() {
@@ -185,16 +246,16 @@ async function analyzeCurrentImage() {
   if (!capturedDataUrl) { showToast('No image captured', 'error'); return; }
 
   const apiKey = localStorage.getItem('apiKey') || '';
-  if (!apiKey) {
-    showToast('Add your API key in Settings first', 'error');
-    showScreen('settings');
-    return;
-  }
+  if (!apiKey) { showToast('Add your API key in Settings first', 'error'); showScreen('settings'); return; }
 
   $('loading-overlay').style.display = 'flex';
   try {
-    capturedThumb = await makeThumbnail(capturedDataUrl, 400);
-    const result  = await analyzeImage(capturedDataUrl, apiKey);
+    // Generate both sizes in parallel
+    [capturedThumb, capturedImage] = await Promise.all([
+      makeThumbnail(capturedDataUrl, 400),
+      makeThumbnail(capturedDataUrl, 1200)
+    ]);
+    const result = await analyzeImage(capturedDataUrl, apiKey);
     $('loading-overlay').style.display = 'none';
     populateReview(result);
     showScreen('review');
@@ -204,7 +265,7 @@ async function analyzeCurrentImage() {
   }
 }
 
-function makeThumbnail(dataUrl, maxPx = 400) {
+function makeThumbnail(dataUrl, maxPx) {
   return new Promise(resolve => {
     const img = new Image();
     img.onload = () => {
@@ -216,7 +277,7 @@ function makeThumbnail(dataUrl, maxPx = 400) {
       const c = document.createElement('canvas');
       c.width = w; c.height = h;
       c.getContext('2d').drawImage(img, 0, 0, w, h);
-      resolve(c.toDataURL('image/jpeg', 0.7));
+      resolve(c.toDataURL('image/jpeg', 0.82));
     };
     img.src = dataUrl;
   });
@@ -229,10 +290,7 @@ function setupReview() {
     showScreen('camera');
     showCaptureMode();
     if (!cameraStream) startCamera();
-    else {
-      $('camera-video').style.display = 'block';
-      $('scan-overlay').style.display = 'flex';
-    }
+    else { $('camera-video').style.display = 'block'; $('scan-overlay').style.display = 'flex'; }
   });
 }
 
@@ -241,7 +299,7 @@ function populateReview(data) {
   $('field-type').value   = data.type   || 'other';
   $('field-vendor').value = data.vendor || '';
   $('field-date').value   = data.date   || '';
-  $('field-amount').value = data.amount || '';
+  $('field-amount').value = normalizeAmount(data.amount || '');
   $('field-notes').value  = data.notes  || '';
 }
 
@@ -250,9 +308,10 @@ async function saveItem() {
     type:   $('field-type').value,
     vendor: $('field-vendor').value.trim(),
     date:   $('field-date').value,
-    amount: $('field-amount').value.trim(),
+    amount: normalizeAmount($('field-amount').value.trim()),
     notes:  $('field-notes').value.trim(),
-    thumb:  capturedThumb || null
+    thumb:  capturedThumb || null,
+    image:  capturedImage || null   // 1200 px — used for Drive uploads
   };
 
   try {
@@ -272,7 +331,7 @@ function setupHistory() {
   $('export-btn').addEventListener('click', async () => {
     const items = await DB.getAll();
     if (!items.length) { showToast('Nothing to export', 'warning'); return; }
-    exportCSV(items);
+    exportXLSX(items);
   });
 }
 
@@ -287,9 +346,7 @@ async function loadHistory() {
 
 function renderHistory(items) {
   const list  = $('history-list');
-  const count = $('history-count');
-
-  count.textContent = `${items.length} item${items.length !== 1 ? 's' : ''}`;
+  $('history-count').textContent = `${items.length} item${items.length !== 1 ? 's' : ''}`;
 
   if (!items.length) {
     list.innerHTML = `
@@ -313,20 +370,33 @@ function renderHistory(items) {
         <div class="history-vendor">${escHtml(item.vendor || '—')}</div>
         <div class="history-meta">
           ${item.date   ? `<span>${escHtml(item.date)}</span>` : ''}
-          ${item.amount ? `<span class="history-amount">${escHtml(item.amount)}</span>` : ''}
+          ${item.amount ? `<span class="history-amount">${escHtml(normalizeAmount(item.amount))}</span>` : ''}
         </div>
       </div>
-      <button class="delete-btn" data-id="${item.id}" aria-label="Delete item">🗑</button>
+      <div class="card-actions">
+        <button class="drive-btn" data-id="${item.id}" aria-label="Upload to Google Drive" title="Upload to Drive">☁️</button>
+        <button class="delete-btn" data-id="${item.id}" aria-label="Delete item">🗑</button>
+      </div>
     </div>
   `).join('');
 
-  // Card tap → detail modal
+  // Card tap → detail (ignore taps on either action button)
   list.querySelectorAll('.history-card').forEach(card => {
     card.addEventListener('click', e => {
-      if (e.target.closest('.delete-btn')) return;
+      if (e.target.closest('.card-actions')) return;
       const id   = parseInt(card.dataset.id, 10);
       const item = items.find(i => i.id === id);
       if (item) showItemDetail(item);
+    });
+  });
+
+  // Drive buttons
+  list.querySelectorAll('.drive-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const id   = parseInt(btn.dataset.id, 10);
+      const item = items.find(i => i.id === id);
+      if (item) uploadToDrive(item);
     });
   });
 
@@ -355,11 +425,11 @@ function showItemDetail(item) {
       <div class="modal-body">
         ${item.thumb ? `<img src="${escHtml(item.thumb)}" alt="Scanned image" class="modal-img">` : ''}
         <dl class="detail-list">
-          <dt>Vendor</dt>  <dd>${escHtml(item.vendor  || '—')}</dd>
-          <dt>Date</dt>    <dd>${escHtml(item.date    || '—')}</dd>
-          <dt>Amount</dt>  <dd>${escHtml(item.amount  || '—')}</dd>
-          <dt>Notes</dt>   <dd>${escHtml(item.notes   || '—')}</dd>
-          <dt>Saved</dt>   <dd>${new Date(item.savedAt).toLocaleString()}</dd>
+          <dt>Vendor</dt> <dd>${escHtml(item.vendor || '—')}</dd>
+          <dt>Date</dt>   <dd>${escHtml(item.date   || '—')}</dd>
+          <dt>Amount</dt> <dd>${escHtml(normalizeAmount(item.amount || ''))  || '—'}</dd>
+          <dt>Notes</dt>  <dd>${escHtml(item.notes  || '—')}</dd>
+          <dt>Saved</dt>  <dd>${new Date(item.savedAt).toLocaleString()}</dd>
         </dl>
       </div>
     </div>`;
@@ -370,25 +440,160 @@ function showItemDetail(item) {
   el.addEventListener('click', e => { if (e.target === el) close(); });
 }
 
-function exportCSV(items) {
+// ── Excel export ──────────────────────────────────────────────────────────────
+function exportXLSX(items) {
+  if (typeof XLSX === 'undefined') {
+    showToast('SheetJS not loaded — check your connection', 'error');
+    return;
+  }
+
   const headers = ['Saved At', 'Type', 'Vendor', 'Date', 'Amount', 'Notes'];
-  const rows    = items.map(({ savedAt, type, vendor, date, amount, notes }) =>
-    [savedAt, type, vendor, date, amount, notes]
-      .map(v => `"${String(v ?? '').replace(/"/g, '""')}"`)
-      .join(',')
-  );
-  const csv  = [headers.join(','), ...rows].join('\n');
-  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  a.href     = url;
-  a.download = `scanner-export-${new Date().toISOString().slice(0, 10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
+  const rows = items.map(({ savedAt, type, vendor, date, amount, notes }) => [
+    savedAt,
+    capitalize(type || 'other'),
+    vendor || '',
+    date   || '',
+    normalizeAmount(amount || ''),
+    notes  || ''
+  ]);
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+
+  // Column widths (characters)
+  ws['!cols'] = [
+    { wch: 24 }, // Saved At
+    { wch: 10 }, // Type
+    { wch: 26 }, // Vendor
+    { wch: 12 }, // Date
+    { wch: 12 }, // Amount
+    { wch: 44 }, // Notes
+  ];
+
+  // Bold header row
+  const headerRange = XLSX.utils.decode_range(ws['!ref']);
+  for (let c = headerRange.s.c; c <= headerRange.e.c; c++) {
+    const cell = ws[XLSX.utils.encode_cell({ r: 0, c })];
+    if (cell) cell.s = { font: { bold: true } };
+  }
+
+  XLSX.utils.book_append_sheet(wb, ws, 'Receipts');
+  XLSX.writeFile(wb, `scanner-export-${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
+// ── Google Drive upload ───────────────────────────────────────────────────────
+let _driveToken  = null;
+let _tokenExpiry = 0;
+
+/**
+ * Request a fresh Google OAuth access token via the GIS token model.
+ * Opens a Google sign-in popup if the user is not already authenticated.
+ */
+function requestGoogleToken(clientId) {
+  return new Promise((resolve, reject) => {
+    if (typeof google === 'undefined' || !google?.accounts?.oauth2) {
+      reject(new Error('Google Identity Services not loaded yet — check your connection'));
+      return;
+    }
+
+    const client = google.accounts.oauth2.initTokenClient({
+      client_id: clientId,
+      scope: 'https://www.googleapis.com/auth/drive.file',
+      callback: resp => {
+        if (resp.error) {
+          reject(new Error(resp.error_description || resp.error));
+          return;
+        }
+        _driveToken  = resp.access_token;
+        _tokenExpiry = Date.now() + (resp.expires_in - 60) * 1000;
+        resolve(resp.access_token);
+      }
+    });
+
+    // Use '' prompt to skip re-consent if already authorised
+    client.requestAccessToken({ prompt: '' });
+  });
+}
+
+async function getValidDriveToken(clientId) {
+  if (_driveToken && Date.now() < _tokenExpiry) return _driveToken;
+  return requestGoogleToken(clientId);
+}
+
+async function uploadToDrive(item) {
+  const clientId = localStorage.getItem('driveClientId');
+  if (!clientId) {
+    showToast('Set your Google Client ID in Settings first', 'error');
+    showScreen('settings');
+    return;
+  }
+
+  // Use the 1200 px image if available, fall back to the 400 px thumbnail
+  const imageDataUrl = item.image || item.thumb;
+  if (!imageDataUrl) {
+    showToast('No image stored for this item', 'error');
+    return;
+  }
+
+  showToast('Connecting to Google Drive…', 'info', 8000);
+
+  let accessToken;
+  try {
+    accessToken = await getValidDriveToken(clientId);
+  } catch (err) {
+    showToast(`Google auth failed: ${err.message}`, 'error', 6000);
+    return;
+  }
+
+  // Convert data-URL → Blob
+  const [meta, b64] = imageDataUrl.split(',');
+  const mimeType = (meta.match(/:(.*?);/) || [])[1] || 'image/jpeg';
+  const bytes = atob(b64);
+  const arr   = new Uint8Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+  const blob = new Blob([arr], { type: mimeType });
+
+  // Filename = exact savedAt string + .jpg
+  const filename = item.savedAt + '.jpg';
+
+  // Build multipart/related body (required by Drive upload API)
+  const boundary  = 'scanner_boundary_' + Math.random().toString(36).slice(2);
+  const metaBlock = JSON.stringify({ name: filename, mimeType: 'image/jpeg' });
+  const body = new Blob([
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n`,
+    metaBlock,
+    `\r\n--${boundary}\r\nContent-Type: image/jpeg\r\n\r\n`,
+    blob,
+    `\r\n--${boundary}--`
+  ]);
+
+  try {
+    const resp = await fetch(
+      'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
+      {
+        method:  'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type':  `multipart/related; boundary=${boundary}`
+        },
+        body
+      }
+    );
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.error?.message || `Drive error ${resp.status}`);
+    }
+
+    showToast(`Uploaded to Drive: ${filename}`, 'success', 5000);
+  } catch (err) {
+    showToast(`Upload failed: ${err.message}`, 'error', 6000);
+  }
 }
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 function setupSettings() {
+  // Gemini API key
   $('save-key-btn').addEventListener('click', () => {
     const key = $('api-key-input').value.trim();
     if (!key) { showToast('Please enter an API key', 'error'); return; }
@@ -397,7 +602,6 @@ function setupSettings() {
     updateKeyStatus();
     showToast('API key saved!', 'success');
   });
-
   $('clear-key-btn').addEventListener('click', () => {
     if (!confirm('Remove saved API key?')) return;
     localStorage.removeItem('apiKey');
@@ -405,6 +609,27 @@ function setupSettings() {
     showToast('API key removed', 'success');
   });
 
+  // Google Drive client ID
+  $('save-drive-btn').addEventListener('click', () => {
+    const id = $('drive-client-input').value.trim();
+    if (!id) { showToast('Please enter a Client ID', 'error'); return; }
+    localStorage.setItem('driveClientId', id);
+    $('drive-client-input').value = '';
+    _driveToken  = null; // invalidate any cached token
+    _tokenExpiry = 0;
+    updateDriveStatus();
+    showToast('Google Client ID saved!', 'success');
+  });
+  $('clear-drive-btn').addEventListener('click', () => {
+    if (!confirm('Remove Google Drive Client ID?')) return;
+    localStorage.removeItem('driveClientId');
+    _driveToken  = null;
+    _tokenExpiry = 0;
+    updateDriveStatus();
+    showToast('Drive Client ID removed', 'success');
+  });
+
+  // Data
   $('clear-data-btn').addEventListener('click', async () => {
     if (!confirm('Delete ALL saved items? This cannot be undone.')) return;
     await DB.clear();
@@ -414,9 +639,16 @@ function setupSettings() {
 
 function updateKeyStatus() {
   const hasKey = !!localStorage.getItem('apiKey');
-  $('key-status').textContent    = hasKey ? '✓ API key is saved' : 'No API key set';
-  $('key-status').className      = `key-status ${hasKey ? 'key-ok' : 'key-missing'}`;
+  $('key-status').textContent      = hasKey ? '✓ API key is saved' : 'No API key set';
+  $('key-status').className        = `key-status ${hasKey ? 'key-ok' : 'key-missing'}`;
   $('clear-key-btn').style.display = hasKey ? 'flex' : 'none';
+}
+
+function updateDriveStatus() {
+  const hasId = !!localStorage.getItem('driveClientId');
+  $('drive-status').textContent       = hasId ? '✓ Client ID is saved' : 'Drive not configured';
+  $('drive-status').className         = `key-status ${hasId ? 'key-ok' : 'key-missing'}`;
+  $('clear-drive-btn').style.display  = hasId ? 'flex' : 'none';
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
@@ -427,5 +659,6 @@ document.addEventListener('DOMContentLoaded', () => {
   setupHistory();
   setupSettings();
   updateKeyStatus();
+  updateDriveStatus();
   showScreen('camera');
 });
