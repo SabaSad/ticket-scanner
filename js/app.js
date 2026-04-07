@@ -5,7 +5,7 @@ let cameraStream      = null;
 let currentFacingMode = 'environment';
 let capturedDataUrl   = null;
 let capturedThumb     = null;   // 400 px — displayed in history list
-let capturedImage     = null;   // 1200 px — uploaded to Google Drive
+let capturedImage     = null;   // Full resolution — uploaded to Google Drive
  
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
@@ -209,10 +209,8 @@ async function analyzeCurrentImage() {
   if (!apiKey) { showToast('Add your API key in Settings first', 'error'); showScreen('settings'); return; }
   $('loading-overlay').style.display = 'flex';
   try {
-    [capturedThumb, capturedImage] = await Promise.all([
-      makeThumbnail(capturedDataUrl, 400),
-      makeThumbnail(capturedDataUrl, 1200)
-    ]);
+    capturedThumb = await makeThumbnail(capturedDataUrl, 400);
+    capturedImage = capturedDataUrl; // original full-resolution for Drive upload
     const result = await analyzeImage(capturedDataUrl, apiKey);
     $('loading-overlay').style.display = 'none';
     populateReview(result);
@@ -269,7 +267,7 @@ async function saveItem() {
     amount: normalizeAmount($('field-amount').value.trim()),
     notes:  $('field-notes').value.trim(),
     thumb:  capturedThumb || null,
-    image:  capturedImage || null
+    image:  capturedImage || null   // full-resolution original, used for Drive upload
   };
   try {
     await DB.add(item);
@@ -454,7 +452,7 @@ async function uploadToDrive(item) {
     showScreen('settings');
     return;
   }
-  const imageDataUrl = item.image || item.thumb;
+  const imageDataUrl = item.image || item.thumb; // item.image is full-res; thumb is fallback for older items
   if (!imageDataUrl) { showToast('No image stored for this item', 'error'); return; }
   showToast('Connecting to Google Drive…', 'info', 8000);
   let accessToken;
