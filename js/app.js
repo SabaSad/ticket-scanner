@@ -1,23 +1,23 @@
 /* ── Main application ──────────────────────────────────────────────────────── */
-
+ 
 // ── State ─────────────────────────────────────────────────────────────────────
 let cameraStream      = null;
 let currentFacingMode = 'environment';
-let capturedDataUrl   = null;   // Full-resolution image (sent to API)
+let capturedDataUrl   = null;
 let capturedThumb     = null;   // 400 px — displayed in history list
 let capturedImage     = null;   // 1200 px — uploaded to Google Drive
-
+ 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
-
+ 
 function escHtml(s) {
   return String(s ?? '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;')
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
-
+ 
 function capitalize(s) { return s ? s[0].toUpperCase() + s.slice(1) : ''; }
-
+ 
 // ── Currency normalisation ────────────────────────────────────────────────────
 const CURRENCY_CODES = [
   ['EUR', '€'], ['USD', '$'], ['GBP', '£'], ['CHF', 'Fr'],
@@ -25,56 +25,32 @@ const CURRENCY_CODES = [
   ['NOK', 'kr'], ['DKK', 'kr']
 ];
 const CURRENCY_SYMS = ['€', '$', '£', 'Fr'];
-
-/**
- * Parse a money string like "1.234,56" or "1,234.56" to a float.
- */
+ 
 function parseMoneyString(s) {
   s = s.trim().replace(/\s/g, '');
   const commas = (s.match(/,/g) || []).length;
   const dots   = (s.match(/\./g) || []).length;
-
   if (!commas && !dots) return parseFloat(s);
-
-  // "1.234,56" — comma is decimal (European)
   if (commas === 1 && dots >= 1 && s.lastIndexOf(',') > s.lastIndexOf('.'))
     return parseFloat(s.replace(/\./g, '').replace(',', '.'));
-
-  // "12,50" or "1,234" — single comma, no dot
   if (commas === 1 && !dots) {
     const decimals = (s.split(',')[1] || '').length;
-    return decimals <= 2
-      ? parseFloat(s.replace(',', '.'))   // decimal comma
-      : parseFloat(s.replace(',', ''));   // thousands comma
+    return decimals <= 2 ? parseFloat(s.replace(',', '.')) : parseFloat(s.replace(',', ''));
   }
-
-  // "1,234.56" — dot is decimal (US)
   if (dots === 1 && commas >= 1 && s.lastIndexOf('.') > s.lastIndexOf(','))
     return parseFloat(s.replace(/,/g, ''));
-
-  // "12.50" or "1.234" — single dot, no comma
   if (dots === 1 && !commas) {
     const decimals = (s.split('.')[1] || '').length;
-    return decimals <= 2
-      ? parseFloat(s)                     // decimal dot
-      : parseFloat(s.replace('.', ''));   // thousands dot
+    return decimals <= 2 ? parseFloat(s) : parseFloat(s.replace('.', ''));
   }
-
-  return parseFloat(s.replace(/,/g, '')); // fallback
+  return parseFloat(s.replace(/,/g, ''));
 }
-
-/**
- * Normalise any amount string to €X.XX (or $X.XX, £X.XX, etc).
- * Returns the original string unchanged if it cannot be parsed.
- */
+ 
 function normalizeAmount(raw) {
   if (!raw) return '';
   let s = String(raw).trim();
   if (!s) return '';
-
   let symbol = null;
-
-  // 1. Try to find a 3-letter currency code first (unambiguous)
   for (const [code, sym] of CURRENCY_CODES) {
     if (new RegExp(`(^|[\\s\\d])${code}([\\s\\d]|$)`, 'i').test(s)) {
       symbol = sym;
@@ -82,27 +58,22 @@ function normalizeAmount(raw) {
       break;
     }
   }
-
-  // 2. Try to find a symbol; strip any that remain regardless
   for (const sym of CURRENCY_SYMS) {
     if (s.includes(sym)) {
       if (!symbol) symbol = sym;
       s = s.replace(new RegExp('\\' + sym, 'g'), '').trim();
     }
   }
-
-  symbol = symbol ?? '€'; // default to Euro
+  symbol = symbol ?? '€';
   s = s.replace(/\s/g, '');
-
   const num = parseMoneyString(s);
-  if (isNaN(num)) return raw; // cannot parse — leave as-is
-
+  if (isNaN(num)) return raw;
   return `${symbol}${num.toFixed(2)}`;
 }
-
+ 
 // ── Toast ─────────────────────────────────────────────────────────────────────
 let toastTimer = null;
-
+ 
 function showToast(message, type = 'info', duration = 3000) {
   const toast = $('toast');
   toast.textContent = message;
@@ -110,37 +81,33 @@ function showToast(message, type = 'info', duration = 3000) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => toast.classList.remove('show'), duration);
 }
-
+ 
 // ── Navigation ────────────────────────────────────────────────────────────────
 const SCREEN_TITLES = {
   camera: 'Scanner', review: 'Review & Save',
   history: 'History', settings: 'Settings'
 };
-
+ 
 function showScreen(name) {
   if (name !== 'camera') stopCamera();
-
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   const target = $(`screen-${name}`);
   if (target) target.classList.add('active');
-
   document.querySelectorAll('.nav-btn').forEach(btn =>
     btn.classList.toggle('active', btn.dataset.screen === name)
   );
-
   $('screen-title').textContent = SCREEN_TITLES[name] ?? 'Scanner';
-
   if (name === 'camera')  startCamera();
   if (name === 'history') loadHistory();
 }
-
+ 
 function setupNav() {
   document.querySelectorAll('.nav-btn').forEach(btn =>
     btn.addEventListener('click', () => showScreen(btn.dataset.screen))
   );
   $('settings-btn').addEventListener('click', () => showScreen('settings'));
 }
-
+ 
 // ── Camera ────────────────────────────────────────────────────────────────────
 function setupCamera() {
   $('capture-btn').addEventListener('click', capturePhoto);
@@ -149,7 +116,7 @@ function setupCamera() {
   $('retake-btn').addEventListener('click', retakePhoto);
   $('analyze-btn').addEventListener('click', analyzeCurrentImage);
 }
-
+ 
 async function startCamera() {
   if (cameraStream) return;
   showCaptureMode();
@@ -162,47 +129,44 @@ async function startCamera() {
     $('camera-unavailable').style.display = 'none';
     video.style.display = 'block';
     $('scan-overlay').style.display = 'flex';
-    $('capture-btn').style.display = 'flex';
-    $('flip-btn').style.display    = 'flex';
+    $('capture-btn').style.display  = 'flex';
+    $('flip-btn').style.display     = 'flex';
   } catch (_) {
-    $('camera-video').style.display   = 'none';
-    $('scan-overlay').style.display   = 'none';
-    $('capture-btn').style.display    = 'none';
-    $('flip-btn').style.display       = 'none';
+    $('camera-video').style.display       = 'none';
+    $('scan-overlay').style.display       = 'none';
+    $('capture-btn').style.display        = 'none';
+    $('flip-btn').style.display           = 'none';
     $('camera-unavailable').style.display = 'flex';
   }
 }
-
+ 
 function stopCamera() {
   if (!cameraStream) return;
   cameraStream.getTracks().forEach(t => t.stop());
   cameraStream = null;
   $('camera-video').srcObject = null;
 }
-
+ 
 async function flipCamera() {
   stopCamera();
   currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
   await startCamera();
 }
-
+ 
 function capturePhoto() {
   const video = $('camera-video');
   if (!video.videoWidth) { showToast('Camera not ready', 'warning'); return; }
-
   const canvas = $('camera-canvas');
   canvas.width  = video.videoWidth;
   canvas.height = video.videoHeight;
   canvas.getContext('2d').drawImage(video, 0, 0);
-
   const overlay = $('scan-overlay');
   overlay.classList.add('flash');
   setTimeout(() => overlay.classList.remove('flash'), 200);
-
   capturedDataUrl = canvas.toDataURL('image/jpeg', 0.92);
   showPreview(capturedDataUrl);
 }
-
+ 
 function handleFileUpload(e) {
   const file = e.target.files[0];
   if (!file) return;
@@ -211,7 +175,7 @@ function handleFileUpload(e) {
   reader.readAsDataURL(file);
   e.target.value = '';
 }
-
+ 
 function showPreview(dataUrl) {
   $('camera-video').style.display       = 'none';
   $('scan-overlay').style.display       = 'none';
@@ -221,7 +185,7 @@ function showPreview(dataUrl) {
   $('capture-controls').style.display   = 'none';
   $('analyze-controls').style.display   = 'flex';
 }
-
+ 
 function showCaptureMode() {
   $('preview-container').style.display  = 'none';
   $('preview-img').src                  = '';
@@ -231,26 +195,20 @@ function showCaptureMode() {
   capturedThumb   = null;
   capturedImage   = null;
 }
-
+ 
 function retakePhoto() {
   showCaptureMode();
   if (!cameraStream) startCamera();
-  else {
-    $('camera-video').style.display = 'block';
-    $('scan-overlay').style.display = 'flex';
-  }
+  else { $('camera-video').style.display = 'block'; $('scan-overlay').style.display = 'flex'; }
 }
-
+ 
 // ── AI Analysis ───────────────────────────────────────────────────────────────
 async function analyzeCurrentImage() {
   if (!capturedDataUrl) { showToast('No image captured', 'error'); return; }
-
   const apiKey = localStorage.getItem('apiKey') || '';
   if (!apiKey) { showToast('Add your API key in Settings first', 'error'); showScreen('settings'); return; }
-
   $('loading-overlay').style.display = 'flex';
   try {
-    // Generate both sizes in parallel
     [capturedThumb, capturedImage] = await Promise.all([
       makeThumbnail(capturedDataUrl, 400),
       makeThumbnail(capturedDataUrl, 1200)
@@ -264,7 +222,7 @@ async function analyzeCurrentImage() {
     showToast(`Analysis failed: ${err.message}`, 'error', 5000);
   }
 }
-
+ 
 function makeThumbnail(dataUrl, maxPx) {
   return new Promise(resolve => {
     const img = new Image();
@@ -282,7 +240,7 @@ function makeThumbnail(dataUrl, maxPx) {
     img.src = dataUrl;
   });
 }
-
+ 
 // ── Review ────────────────────────────────────────────────────────────────────
 function setupReview() {
   $('save-btn').addEventListener('click', saveItem);
@@ -293,7 +251,7 @@ function setupReview() {
     else { $('camera-video').style.display = 'block'; $('scan-overlay').style.display = 'flex'; }
   });
 }
-
+ 
 function populateReview(data) {
   $('review-thumb').src   = capturedThumb || '';
   $('field-type').value   = data.type   || 'other';
@@ -302,7 +260,7 @@ function populateReview(data) {
   $('field-amount').value = normalizeAmount(data.amount || '');
   $('field-notes').value  = data.notes  || '';
 }
-
+ 
 async function saveItem() {
   const item = {
     type:   $('field-type').value,
@@ -311,9 +269,8 @@ async function saveItem() {
     amount: normalizeAmount($('field-amount').value.trim()),
     notes:  $('field-notes').value.trim(),
     thumb:  capturedThumb || null,
-    image:  capturedImage || null   // 1200 px — used for Drive uploads
+    image:  capturedImage || null
   };
-
   try {
     await DB.add(item);
     showToast('Saved!', 'success');
@@ -323,10 +280,10 @@ async function saveItem() {
     showToast(`Save failed: ${err.message}`, 'error');
   }
 }
-
+ 
 // ── History ───────────────────────────────────────────────────────────────────
 const TYPE_ICONS = { receipt: '🛒', ticket: '🎫', other: '📄' };
-
+ 
 function setupHistory() {
   $('export-btn').addEventListener('click', async () => {
     const items = await DB.getAll();
@@ -334,7 +291,7 @@ function setupHistory() {
     exportXLSX(items);
   });
 }
-
+ 
 async function loadHistory() {
   try {
     const items = await DB.getAll();
@@ -343,11 +300,11 @@ async function loadHistory() {
     showToast('Could not load history', 'error');
   }
 }
-
+ 
 function renderHistory(items) {
-  const list  = $('history-list');
+  const list = $('history-list');
   $('history-count').textContent = `${items.length} item${items.length !== 1 ? 's' : ''}`;
-
+ 
   if (!items.length) {
     list.innerHTML = `
       <div class="empty-state">
@@ -357,7 +314,7 @@ function renderHistory(items) {
       </div>`;
     return;
   }
-
+ 
   list.innerHTML = items.map(item => `
     <div class="history-card" data-id="${item.id}">
       <div class="history-thumb">
@@ -379,8 +336,7 @@ function renderHistory(items) {
       </div>
     </div>
   `).join('');
-
-  // Card tap → detail (ignore taps on either action button)
+ 
   list.querySelectorAll('.history-card').forEach(card => {
     card.addEventListener('click', e => {
       if (e.target.closest('.card-actions')) return;
@@ -389,8 +345,7 @@ function renderHistory(items) {
       if (item) showItemDetail(item);
     });
   });
-
-  // Drive buttons
+ 
   list.querySelectorAll('.drive-btn').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
@@ -399,8 +354,7 @@ function renderHistory(items) {
       if (item) uploadToDrive(item);
     });
   });
-
-  // Delete buttons
+ 
   list.querySelectorAll('.delete-btn').forEach(btn => {
     btn.addEventListener('click', async e => {
       e.stopPropagation();
@@ -411,7 +365,7 @@ function renderHistory(items) {
     });
   });
 }
-
+ 
 function showItemDetail(item) {
   const icon = TYPE_ICONS[item.type] ?? '📄';
   const el   = document.createElement('div');
@@ -427,26 +381,24 @@ function showItemDetail(item) {
         <dl class="detail-list">
           <dt>Vendor</dt> <dd>${escHtml(item.vendor || '—')}</dd>
           <dt>Date</dt>   <dd>${escHtml(item.date   || '—')}</dd>
-          <dt>Amount</dt> <dd>${escHtml(normalizeAmount(item.amount || ''))  || '—'}</dd>
+          <dt>Amount</dt> <dd>${escHtml(normalizeAmount(item.amount || '')) || '—'}</dd>
           <dt>Notes</dt>  <dd>${escHtml(item.notes  || '—')}</dd>
           <dt>Saved</dt>  <dd>${new Date(item.savedAt).toLocaleString()}</dd>
         </dl>
       </div>
     </div>`;
-
   document.body.appendChild(el);
   const close = () => el.remove();
   el.querySelector('.modal-close').addEventListener('click', close);
   el.addEventListener('click', e => { if (e.target === el) close(); });
 }
-
+ 
 // ── Excel export ──────────────────────────────────────────────────────────────
 function exportXLSX(items) {
   if (typeof XLSX === 'undefined') {
     showToast('SheetJS not loaded — check your connection', 'error');
     return;
   }
-
   const headers = ['Saved At', 'Type', 'Vendor', 'Date', 'Amount', 'Notes'];
   const rows = items.map(({ savedAt, type, vendor, date, amount, notes }) => [
     savedAt,
@@ -456,70 +408,45 @@ function exportXLSX(items) {
     normalizeAmount(amount || ''),
     notes  || ''
   ]);
-
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-
-  // Column widths (characters)
   ws['!cols'] = [
-    { wch: 24 }, // Saved At
-    { wch: 10 }, // Type
-    { wch: 26 }, // Vendor
-    { wch: 12 }, // Date
-    { wch: 12 }, // Amount
-    { wch: 44 }, // Notes
+    { wch: 24 }, { wch: 10 }, { wch: 26 },
+    { wch: 12 }, { wch: 12 }, { wch: 44 }
   ];
-
-  // Bold header row
-  const headerRange = XLSX.utils.decode_range(ws['!ref']);
-  for (let c = headerRange.s.c; c <= headerRange.e.c; c++) {
-    const cell = ws[XLSX.utils.encode_cell({ r: 0, c })];
-    if (cell) cell.s = { font: { bold: true } };
-  }
-
   XLSX.utils.book_append_sheet(wb, ws, 'Receipts');
   XLSX.writeFile(wb, `scanner-export-${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
-
+ 
 // ── Google Drive upload ───────────────────────────────────────────────────────
 let _driveToken  = null;
 let _tokenExpiry = 0;
-
-/**
- * Request a fresh Google OAuth access token via the GIS token model.
- * Opens a Google sign-in popup if the user is not already authenticated.
- */
+ 
 function requestGoogleToken(clientId) {
   return new Promise((resolve, reject) => {
     if (typeof google === 'undefined' || !google?.accounts?.oauth2) {
-      reject(new Error('Google Identity Services not loaded yet — check your connection'));
+      reject(new Error('Google Identity Services not loaded — check your connection'));
       return;
     }
-
     const client = google.accounts.oauth2.initTokenClient({
       client_id: clientId,
       scope: 'https://www.googleapis.com/auth/drive.file',
       callback: resp => {
-        if (resp.error) {
-          reject(new Error(resp.error_description || resp.error));
-          return;
-        }
+        if (resp.error) { reject(new Error(resp.error_description || resp.error)); return; }
         _driveToken  = resp.access_token;
         _tokenExpiry = Date.now() + (resp.expires_in - 60) * 1000;
         resolve(resp.access_token);
       }
     });
-
-    // Use '' prompt to skip re-consent if already authorised
     client.requestAccessToken({ prompt: '' });
   });
 }
-
+ 
 async function getValidDriveToken(clientId) {
   if (_driveToken && Date.now() < _tokenExpiry) return _driveToken;
   return requestGoogleToken(clientId);
 }
-
+ 
 async function uploadToDrive(item) {
   const clientId = localStorage.getItem('driveClientId');
   if (!clientId) {
@@ -527,16 +454,9 @@ async function uploadToDrive(item) {
     showScreen('settings');
     return;
   }
-
-  // Use the 1200 px image if available, fall back to the 400 px thumbnail
   const imageDataUrl = item.image || item.thumb;
-  if (!imageDataUrl) {
-    showToast('No image stored for this item', 'error');
-    return;
-  }
-
+  if (!imageDataUrl) { showToast('No image stored for this item', 'error'); return; }
   showToast('Connecting to Google Drive…', 'info', 8000);
-
   let accessToken;
   try {
     accessToken = await getValidDriveToken(clientId);
@@ -544,19 +464,13 @@ async function uploadToDrive(item) {
     showToast(`Google auth failed: ${err.message}`, 'error', 6000);
     return;
   }
-
-  // Convert data-URL → Blob
   const [meta, b64] = imageDataUrl.split(',');
   const mimeType = (meta.match(/:(.*?);/) || [])[1] || 'image/jpeg';
   const bytes = atob(b64);
   const arr   = new Uint8Array(bytes.length);
   for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
   const blob = new Blob([arr], { type: mimeType });
-
-  // Filename = exact savedAt string + .jpg
-  const filename = item.savedAt + '.jpg';
-
-  // Build multipart/related body (required by Drive upload API)
+  const filename  = item.savedAt + '.jpg';
   const boundary  = 'scanner_boundary_' + Math.random().toString(36).slice(2);
   const metaBlock = JSON.stringify({ name: filename, mimeType: 'image/jpeg' });
   const body = new Blob([
@@ -566,12 +480,11 @@ async function uploadToDrive(item) {
     blob,
     `\r\n--${boundary}--`
   ]);
-
   try {
     const resp = await fetch(
       'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
       {
-        method:  'POST',
+        method: 'POST',
         headers: {
           'Authorization': `Bearer ${accessToken}`,
           'Content-Type':  `multipart/related; boundary=${boundary}`
@@ -579,21 +492,18 @@ async function uploadToDrive(item) {
         body
       }
     );
-
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({}));
       throw new Error(err.error?.message || `Drive error ${resp.status}`);
     }
-
     showToast(`Uploaded to Drive: ${filename}`, 'success', 5000);
   } catch (err) {
     showToast(`Upload failed: ${err.message}`, 'error', 6000);
   }
 }
-
+ 
 // ── Settings ──────────────────────────────────────────────────────────────────
 function setupSettings() {
-  // Gemini API key
   $('save-key-btn').addEventListener('click', () => {
     const key = $('api-key-input').value.trim();
     if (!key) { showToast('Please enter an API key', 'error'); return; }
@@ -608,14 +518,12 @@ function setupSettings() {
     updateKeyStatus();
     showToast('API key removed', 'success');
   });
-
-  // Google Drive client ID
   $('save-drive-btn').addEventListener('click', () => {
     const id = $('drive-client-input').value.trim();
     if (!id) { showToast('Please enter a Client ID', 'error'); return; }
     localStorage.setItem('driveClientId', id);
     $('drive-client-input').value = '';
-    _driveToken  = null; // invalidate any cached token
+    _driveToken  = null;
     _tokenExpiry = 0;
     updateDriveStatus();
     showToast('Google Client ID saved!', 'success');
@@ -628,29 +536,27 @@ function setupSettings() {
     updateDriveStatus();
     showToast('Drive Client ID removed', 'success');
   });
-
-  // Data
   $('clear-data-btn').addEventListener('click', async () => {
     if (!confirm('Delete ALL saved items? This cannot be undone.')) return;
     await DB.clear();
     showToast('All data cleared', 'success');
   });
 }
-
+ 
 function updateKeyStatus() {
   const hasKey = !!localStorage.getItem('apiKey');
   $('key-status').textContent      = hasKey ? '✓ API key is saved' : 'No API key set';
   $('key-status').className        = `key-status ${hasKey ? 'key-ok' : 'key-missing'}`;
   $('clear-key-btn').style.display = hasKey ? 'flex' : 'none';
 }
-
+ 
 function updateDriveStatus() {
   const hasId = !!localStorage.getItem('driveClientId');
   $('drive-status').textContent       = hasId ? '✓ Client ID is saved' : 'Drive not configured';
   $('drive-status').className         = `key-status ${hasId ? 'key-ok' : 'key-missing'}`;
   $('clear-drive-btn').style.display  = hasId ? 'flex' : 'none';
 }
-
+ 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   setupNav();
