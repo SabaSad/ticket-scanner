@@ -1,4 +1,4 @@
-const CACHE = 'scanner-v5';
+const CACHE = 'scanner-v6';
 const ASSETS = [
   './',
   './index.html',
