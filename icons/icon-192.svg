@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
+  <rect width="192" height="192" rx="40" fill="#0d0d1a"/>
+  <circle cx="96" cy="96" r="72" fill="#7c4dff" opacity="0.15"/>
+  <!-- Receipt body -->
+  <rect x="54" y="34" width="84" height="110" rx="8" fill="#1a1a2e" stroke="#7c4dff" stroke-width="2.5"/>
+  <!-- Receipt lines -->
+  <rect x="68" y="56" width="52" height="5" rx="2.5" fill="#7c4dff"/>
+  <rect x="68" y="71" width="36" height="4" rx="2" fill="#4fc3f7" opacity="0.8"/>
+  <rect x="68" y="85" width="44" height="4" rx="2" fill="#4fc3f7" opacity="0.65"/>
+  <rect x="68" y="99" width="28" height="4" rx="2" fill="#4fc3f7" opacity="0.5"/>
+  <rect x="62" y="116" width="68" height="1.5" fill="#7c4dff" opacity="0.4"/>
+  <rect x="68" y="125" width="52" height="7" rx="3.5" fill="#7c4dff"/>
+  <!-- Scan corners -->
+  <path d="M18 18 L18 40 M18 18 L40 18" stroke="#7c4dff" stroke-width="6" stroke-linecap="round" fill="none"/>
+  <path d="M174 18 L174 40 M174 18 L152 18" stroke="#7c4dff" stroke-width="6" stroke-linecap="round" fill="none"/>
+  <path d="M18 174 L18 152 M18 174 L40 174" stroke="#7c4dff" stroke-width="6" stroke-linecap="round" fill="none"/>
+  <path d="M174 174 L174 152 M174 174 L152 174" stroke="#7c4dff" stroke-width="6" stroke-linecap="round" fill="none"/>
+</svg>

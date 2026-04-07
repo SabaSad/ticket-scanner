@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+  <!-- PWA / theme -->
+  <meta name="theme-color" content="#0d0d1a">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Scanner">
+
+  <title>Receipt & Ticket Scanner</title>
+
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/icon-192.svg">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- ═══════════════════════════════════════════════════════ HEADER -->
+  <header class="app-header">
+    <h1 id="screen-title">Scanner</h1>
+    <button id="settings-btn" class="icon-btn" aria-label="Settings">⚙️</button>
+  </header>
+
+  <!-- ═══════════════════════════════════════════════════════ MAIN -->
+  <main class="app-main">
+
+    <!-- ──────────────────────────────────── CAMERA SCREEN -->
+    <section id="screen-camera" class="screen" aria-label="Camera">
+
+      <div class="camera-container">
+        <!-- Live viewfinder -->
+        <video id="camera-video" autoplay playsinline muted></video>
+
+        <!-- Scan-frame overlay (corners + flash effect) -->
+        <div id="scan-overlay">
+          <div class="scan-frame">
+            <span class="corner tl"></span>
+            <span class="corner tr"></span>
+            <span class="corner bl"></span>
+            <span class="corner br"></span>
+          </div>
+        </div>
+
+        <!-- Still-image preview after capture / upload -->
+        <div id="preview-container" class="preview-container">
+          <img id="preview-img" alt="Captured image">
+        </div>
+
+        <!-- Shown when getUserMedia fails -->
+        <div id="camera-unavailable" class="camera-unavailable" style="display:none">
+          <span class="unavail-icon">📷</span>
+          <p>Camera not available</p>
+          <p>Use the <strong>Upload</strong> button below.</p>
+        </div>
+
+        <!-- AI loading overlay -->
+        <div id="loading-overlay" class="loading-overlay">
+          <div class="spinner"></div>
+          <p>Analyzing with AI…</p>
+        </div>
+      </div><!-- /camera-container -->
+
+      <!-- Controls bar -->
+      <div class="camera-controls">
+
+        <!-- Shown while viewfinder is live -->
+        <div id="capture-controls">
+          <label class="upload-label">
+            📁 Upload
+            <input type="file" id="file-input" accept="image/*" style="display:none">
+          </label>
+
+          <button id="capture-btn" class="btn btn-primary capture-btn" aria-label="Capture photo">📷</button>
+
+          <button id="flip-btn" class="btn btn-secondary" aria-label="Flip camera" style="display:none">🔄</button>
+        </div>
+
+        <!-- Shown after an image is captured/uploaded -->
+        <div id="analyze-controls" style="display:none">
+          <button id="retake-btn"  class="btn btn-secondary">↩ Retake</button>
+          <button id="analyze-btn" class="btn btn-primary">✨ Analyze</button>
+        </div>
+
+      </div><!-- /camera-controls -->
+    </section><!-- /screen-camera -->
+
+    <!-- ──────────────────────────────────── REVIEW SCREEN -->
+    <section id="screen-review" class="screen" aria-label="Review">
+
+      <div class="review-scroll">
+
+        <!-- Thumbnail of the scanned image -->
+        <div class="review-thumb-box">
+          <img id="review-thumb" alt="Scanned image">
+        </div>
+
+        <!-- Editable fields populated by AI (and editable by user) -->
+        <form id="review-form" class="review-form" onsubmit="return false">
+
+          <div class="form-group">
+            <label for="field-type">Type</label>
+            <select id="field-type" class="form-control">
+              <option value="receipt">🛒 Receipt</option>
+              <option value="ticket">🎫 Transport Ticket</option>
+              <option value="other">📄 Other</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="field-vendor">Vendor / Store</label>
+            <input type="text" id="field-vendor" class="form-control" placeholder="e.g. SPAR, DB Bahn, Amazon">
+          </div>
+
+          <div class="form-group">
+            <label for="field-date">Date</label>
+            <input type="date" id="field-date" class="form-control">
+          </div>
+
+          <div class="form-group">
+            <label for="field-amount">Total Amount</label>
+            <input type="text" id="field-amount" class="form-control" placeholder="e.g. €12.50">
+          </div>
+
+          <div class="form-group">
+            <label for="field-notes">Notes</label>
+            <textarea id="field-notes" class="form-control" rows="3"
+              placeholder="Additional details from the AI…"></textarea>
+          </div>
+
+        </form>
+      </div><!-- /review-scroll -->
+
+      <div class="review-actions">
+        <button id="discard-btn" class="btn btn-secondary">✕ Discard</button>
+        <button id="save-btn"    class="btn btn-success">✓ Save</button>
+      </div>
+
+    </section><!-- /screen-review -->
+
+    <!-- ──────────────────────────────────── HISTORY SCREEN -->
+    <section id="screen-history" class="screen" aria-label="History">
+
+      <div class="history-toolbar">
+        <span id="history-count" class="history-count">0 items</span>
+        <button id="export-btn" class="btn btn-sm btn-secondary">📥 Export CSV</button>
+      </div>
+
+      <div id="history-list" class="history-list">
+        <!-- Populated by JS -->
+        <div class="empty-state">
+          <div class="empty-icon">🗂️</div>
+          <p>No items yet.</p>
+          <p class="empty-hint">Scan a receipt or ticket to get started!</p>
+        </div>
+      </div>
+
+    </section><!-- /screen-history -->
+
+    <!-- ──────────────────────────────────── SETTINGS SCREEN -->
+    <section id="screen-settings" class="screen" aria-label="Settings">
+
+      <div class="settings-scroll">
+
+        <!-- API Key -->
+        <div class="settings-card">
+          <h2>Anthropic API Key</h2>
+          <p class="settings-hint">
+            Your key is stored only in this browser's localStorage and never sent anywhere except
+            directly to api.anthropic.com. Get a key at console.anthropic.com.
+          </p>
+          <span id="key-status" class="key-status key-missing">No API key set</span>
+          <div class="form-group">
+            <input type="password" id="api-key-input" class="form-control"
+              placeholder="sk-ant-api03-…" autocomplete="off" spellcheck="false">
+          </div>
+          <div class="settings-row">
+            <button id="save-key-btn"  class="btn btn-primary">Save Key</button>
+            <button id="clear-key-btn" class="btn btn-secondary" style="display:none">Remove</button>
+          </div>
+        </div>
+
+        <!-- Data management -->
+        <div class="settings-card">
+          <h2>Data</h2>
+          <p class="settings-hint">All scanned items are stored locally in your browser's IndexedDB.</p>
+          <button id="clear-data-btn" class="btn btn-danger">🗑 Delete All Items</button>
+        </div>
+
+        <!-- About -->
+        <div class="settings-card">
+          <h2>About</h2>
+          <p class="settings-hint">
+            Receipt &amp; Ticket Scanner v1.0<br>
+            Uses <strong>Claude claude-haiku-4-5-20251001</strong> for fast, cost-effective vision extraction.<br>
+            All data stays on your device.
+          </p>
+        </div>
+
+      </div><!-- /settings-scroll -->
+    </section><!-- /screen-settings -->
+
+  </main><!-- /app-main -->
+
+  <!-- ═══════════════════════════════════════════════════════ BOTTOM NAV -->
+  <nav class="bottom-nav" aria-label="Main navigation">
+    <button class="nav-btn active" data-screen="camera" aria-label="Scan">
+      <span class="nav-icon">📷</span>
+      <span class="nav-label">Scan</span>
+    </button>
+    <button class="nav-btn" data-screen="history" aria-label="History">
+      <span class="nav-icon">🗂️</span>
+      <span class="nav-label">History</span>
+    </button>
+  </nav>
+
+  <!-- ═══════════════════════════════════════════════════════ CANVAS (hidden, for capture) -->
+  <canvas id="camera-canvas" style="display:none" aria-hidden="true"></canvas>
+
+  <!-- ═══════════════════════════════════════════════════════ TOAST -->
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <!-- ═══════════════════════════════════════════════════════ SCRIPTS -->
+  <script src="js/db.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/app.js"></script>
+
+</body>
+</html>
