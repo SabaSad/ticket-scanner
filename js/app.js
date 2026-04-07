@@ -288,6 +288,7 @@ function setupHistory() {
     if (!items.length) { showToast('Nothing to export', 'warning'); return; }
     exportXLSX(items);
   });
+  $('upload-all-btn').addEventListener('click', uploadAllToDrive);
 }
  
 async function loadHistory() {
@@ -445,31 +446,44 @@ async function getValidDriveToken(clientId) {
   return requestGoogleToken(clientId);
 }
  
-async function uploadToDrive(item) {
-  const clientId = localStorage.getItem('driveClientId');
-  if (!clientId) {
-    showToast('Set your Google Client ID in Settings first', 'error');
-    showScreen('settings');
-    return;
-  }
-  const imageDataUrl = item.image || item.thumb; // item.image is full-res; thumb is fallback for older items
-  if (!imageDataUrl) { showToast('No image stored for this item', 'error'); return; }
-  showToast('Connecting to Google Drive…', 'info', 8000);
-  let accessToken;
-  try {
-    accessToken = await getValidDriveToken(clientId);
-  } catch (err) {
-    showToast(`Google auth failed: ${err.message}`, 'error', 6000);
-    return;
-  }
-  const [meta, b64] = imageDataUrl.split(',');
-  const mimeType = (meta.match(/:(.*?);/) || [])[1] || 'image/jpeg';
+// ── Drive low-level helpers ───────────────────────────────────────────────────
+
+/** Convert a data-URL to a Blob. */
+function dataUrlToBlob(dataUrl) {
+  const [meta, b64] = dataUrl.split(',');
+  const mimeType    = (meta.match(/:(.*?);/) || [])[1] || 'image/jpeg';
   const bytes = atob(b64);
   const arr   = new Uint8Array(bytes.length);
   for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
-  const blob = new Blob([arr], { type: mimeType });
-  const filename  = item.savedAt + '.jpg';
-  const boundary  = 'scanner_boundary_' + Math.random().toString(36).slice(2);
+  return new Blob([arr], { type: mimeType });
+}
+
+/**
+ * Return true if a file with this exact name already exists in Drive
+ * (not trashed). Throws on network / auth errors.
+ */
+async function driveFileExists(filename, accessToken) {
+  // Single quotes inside the filename must be escaped as \' for the Drive query
+  const safe = filename.replace(/'/g, "\\'");
+  const q    = `name='${safe}' and trashed=false`;
+  const resp = await fetch(
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)&pageSize=1`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  if (!resp.ok) {
+    const e = await resp.json().catch(() => ({}));
+    throw new Error(e.error?.message || `Drive search error ${resp.status}`);
+  }
+  const data = await resp.json();
+  return data.files.length > 0;
+}
+
+/**
+ * Upload a Blob to Drive using multipart/related.
+ * Throws on failure so callers can decide how to handle errors.
+ */
+async function driveUpload(blob, filename, accessToken) {
+  const boundary  = 'scanner_' + Math.random().toString(36).slice(2);
   const metaBlock = JSON.stringify({ name: filename, mimeType: 'image/jpeg' });
   const body = new Blob([
     `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n`,
@@ -478,26 +492,118 @@ async function uploadToDrive(item) {
     blob,
     `\r\n--${boundary}--`
   ]);
-  try {
-    const resp = await fetch(
-      'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type':  `multipart/related; boundary=${boundary}`
-        },
-        body
-      }
-    );
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({}));
-      throw new Error(err.error?.message || `Drive error ${resp.status}`);
+  const resp = await fetch(
+    'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
+    {
+      method:  'POST',
+      headers: {
+        Authorization:  `Bearer ${accessToken}`,
+        'Content-Type': `multipart/related; boundary=${boundary}`
+      },
+      body
     }
-    showToast(`Uploaded to Drive: ${filename}`, 'success', 5000);
+  );
+  if (!resp.ok) {
+    const e = await resp.json().catch(() => ({}));
+    throw new Error(e.error?.message || `Drive error ${resp.status}`);
+  }
+}
+
+// ── Single-item upload ────────────────────────────────────────────────────────
+
+async function uploadToDrive(item) {
+  const clientId = localStorage.getItem('driveClientId');
+  if (!clientId) {
+    showToast('Set your Google Client ID in Settings first', 'error');
+    showScreen('settings');
+    return;
+  }
+  const imageDataUrl = item.image || item.thumb;
+  if (!imageDataUrl) { showToast('No image stored for this item', 'error'); return; }
+
+  showToast('Connecting to Google Drive…', 'info', 8000);
+  let accessToken;
+  try {
+    accessToken = await getValidDriveToken(clientId);
+  } catch (err) {
+    showToast(`Google auth failed: ${err.message}`, 'error', 6000);
+    return;
+  }
+
+  const filename = item.savedAt + '.jpg';
+  try {
+    await driveUpload(dataUrlToBlob(imageDataUrl), filename, accessToken);
+    showToast(`Uploaded: ${filename}`, 'success', 5000);
   } catch (err) {
     showToast(`Upload failed: ${err.message}`, 'error', 6000);
   }
+}
+
+// ── Bulk upload ───────────────────────────────────────────────────────────────
+
+async function uploadAllToDrive() {
+  const clientId = localStorage.getItem('driveClientId');
+  if (!clientId) {
+    showToast('Set your Google Client ID in Settings first', 'error');
+    showScreen('settings');
+    return;
+  }
+
+  const allItems = await DB.getAll();
+  const items    = allItems.filter(i => i.image || i.thumb);
+  if (!items.length) { showToast('No items with images to upload', 'warning'); return; }
+
+  // Disable button for the duration of the batch
+  const btn = $('upload-all-btn');
+  btn.disabled = true;
+
+  showToast('Authenticating with Google Drive…', 'info', 10000);
+  let accessToken;
+  try {
+    accessToken = await getValidDriveToken(clientId);
+  } catch (err) {
+    showToast(`Google auth failed: ${err.message}`, 'error', 6000);
+    btn.disabled = false;
+    return;
+  }
+
+  let uploaded = 0, skipped = 0, failed = 0;
+  const total  = items.length;
+
+  for (let i = 0; i < total; i++) {
+    const item     = items[i];
+    const filename = item.savedAt + '.jpg';
+
+    showToast(`Uploading ${i + 1} of ${total}…`, 'info', 20000);
+
+    try {
+      const exists = await driveFileExists(filename, accessToken);
+      if (exists) {
+        skipped++;
+        continue;
+      }
+      await driveUpload(dataUrlToBlob(item.image || item.thumb), filename, accessToken);
+      uploaded++;
+    } catch (err) {
+      console.warn(`Drive upload failed for ${filename}:`, err.message);
+      failed++;
+    }
+  }
+
+  btn.disabled = false;
+
+  // Build summary message
+  const parts = [
+    uploaded > 0 ? `Uploaded ${uploaded}`                      : null,
+    skipped  > 0 ? `skipped ${skipped} already in Drive`       : null,
+    failed   > 0 ? `${failed} failed`                          : null,
+    (uploaded === 0 && skipped === 0 && failed === 0) ? 'Nothing to upload' : null
+  ].filter(Boolean);
+
+  const type = failed > 0 && uploaded === 0 ? 'error'
+             : uploaded > 0                 ? 'success'
+             :                                'info';
+  showToast(parts.join(', '), type, 7000);
 }
  
 // ── Settings ──────────────────────────────────────────────────────────────────
