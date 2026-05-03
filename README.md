@@ -2,6 +2,8 @@
 A Progressive Web App that uses AI to extract and organise data from receipts and transport tickets, built with vanilla JavaScript and the Gemini Vision API.\
 → [Live Demo](https://sabasad.github.io/ticket-scanner/)  
 > To use the app, you'll need a [Gemini API key](https://aistudio.google.com/) and a Google Drive Client ID from the [Google Cloud Console](https://console.cloud.google.com/) — paste both in the Settings screen.
+<img width="584" height="1195" alt="Captura de pantalla 2026-05-03 175602" src="https://github.com/user-attachments/assets/be4f7c5d-1a56-4c3f-93fc-b439a7c0280a" />
+<img width="585" height="1187" alt="Captura de pantalla 2026-05-03 175612" src="https://github.com/user-attachments/assets/4a0c9242-448e-4ff7-9c16-bf657d4ef1c3" />
 
 ## What it does
 Point your camera at any shopping receipt or transport ticket, and the app reads it for you. It extracts the date, amount, vendor, and ticket type, lets you confirm or correct the result, and saves everything locally so you can review your history, export it to a spreadsheet, or upload ticket photos to your Google Drive.\
