@@ -1,6 +1,6 @@
 # 🎫 Ticket Scanner
 A Progressive Web App that uses AI to extract and organise data from receipts and transport tickets, built with vanilla JavaScript and the Gemini Vision API.\
-→ [Live Demo]([https://sabasad.github.io/ticket-scanner/).
+→ [Live Demo](https://sabasad.github.io/ticket-scanner/)  
 > To use the app, you'll need a [Gemini API key](https://aistudio.google.com/) and a Google Drive Client ID from the [Google Cloud Console](https://console.cloud.google.com/) — paste both in the Settings screen.
 
 ## What it does
