@@ -17,7 +17,7 @@ No account needed. No data leaves your device except the photo sent to the AI, a
 ☁️ Google Drive sync:	Export and back up your scan history to Google Drive\
 📤 CSV export:	Download your data as a spreadsheet\
 📵 Offline-capable:	Service worker caches the app shell\
-📱 Installable:	Appears on your home screen like a native app\
+📱 Installable:	Appears on your home screen like a native app
 
 ## Tech stack
 Frontend: Vanilla HTML, CSS, JavaScript — no frameworks\
@@ -26,7 +26,7 @@ Cloud: Google Drive API for backup and export\
 Auth: Google OAuth 2.0\
 Storage: IndexedDB (all data stays on your device)\
 PWA: Web App Manifest + Service Worker\
-Hosting: GitHub Pages\
+Hosting: GitHub Pages
 
 ## Why I built this
 My dad needed to upload receipts and tickets for his taxes, but doing it manually one by one was extremely slow. I built this to automate the extraction and organisation so he could just scan a pile of tickets and have the data ready to export, cutting what used to take hours down to minutes.
@@ -36,4 +36,4 @@ How Progressive Web Apps differ from regular websites and what makes them instal
 Working with the browser's MediaDevices API for camera access\
 Structuring prompts to get reliable JSON output from a vision model\
 Google OAuth 2.0 flow and integrating the Google Drive API from a client-side app\
-IndexedDB for persistent client-side storage without a backend\
+IndexedDB for persistent client-side storage without a backend
