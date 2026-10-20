@@ -20,7 +20,7 @@ No account needed. No data leaves your device except the photo sent to the AI, a
 📱 Installable:	Appears on your home screen like a native app
 
 ## Tech stack
-Frontend: Vanilla HTML, CSS, JavaScript — no frameworks\
+Frontend: Vanilla HTML, CSS, JavaScript - no frameworks\
 AI: Google Gemini Vision API for image-to-data extraction\
 Cloud: Google Drive API for backup and export\
 Auth: Google OAuth 2.0\
